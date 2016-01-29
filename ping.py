@@ -17,8 +17,16 @@ class Ping(object):
                 c -= 1
             if c < 0:
                 break
-            self.result = self.ping()
-        self.conn.shutdown(socket.SHUT_RDWR)
+            try:
+                self.result, msg = self.ping()
+            except socket.error:
+                msg = 'Unknown host: {}'.format(self.host)
+                time.sleep(self.timeout)
+            self.log(msg)
+        try:
+            self.conn.shutdown(socket.SHUT_RDWR)
+        except socket.error:
+            pass
         self.conn.close()
 
     def _chksum(self, data):
@@ -31,9 +39,15 @@ class Ping(object):
         chksum = '%x' % (~chksum & 0xFFFF)
         return ('0'*(len(chksum) % 2) + chksum).decode('hex')[::-1]
 
+    def log(self, msg):
+        if self.logger == 'print':
+            print msg
+        else:
+            self.logger(msg)
+
     def ping(self):
         success = False
-        msg = ''
+        msg = 'Request timed out for {}'.format(self.host)
         rstr = '%x' % random.randrange(0, 65536)
         payload = ('0'*(len(rstr) % 2) + rstr).decode('hex') + b'\x01\x00'
         packet = b'\x08\x00' + b'\x00\x00' + payload
@@ -51,10 +65,4 @@ class Ping(object):
             if packet == b'\0\0' + self._chksum(unchecked) + payload:
                 success = True
                 msg = "ping {}: {}".format(self.host, time.time() - start)
-        if not success:
-            msg = "Request timed out for {}".format(self.host)
-        if self.logger == 'print':
-            print msg
-        else:
-            self.logger(msg)
-        return success
+        return success, msg
